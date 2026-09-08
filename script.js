@@ -1,6 +1,15 @@
 "use strict";
 
 /* =======================================================================
+   ADMIN CONFIGURATION
+   Set to false to disable Phrase Mode entirely -- useful for public/
+   kiosk installations where someone typing an arbitrary phrase could
+   spell out something inappropriate. When disabled, the app stays in
+   Letter Mode permanently and the Mode toggle button is hidden.
+   ======================================================================= */
+const ENABLE_PHRASE_MODE = true;
+
+/* =======================================================================
    GENERAL CONSTANTS  (ported 1:1 from binary_text_visualizer.py)
    ======================================================================= */
 const BITS_PER_CHAR = 8;
@@ -187,8 +196,14 @@ const App = {
   mult: DEFAULT_MULT,
   noiseEnabled: DEFAULT_NOISE_ENABLED,
   audioEnabled: true,
-  activeScheme: DEFAULT_SOUND_SCHEME,
-  cmapSpec: DEFAULT_CMAP,        // "inferno" or an override {stops:[...]}
+  // NOTE: the active sound scheme and its colormap are deliberately NOT
+  // cached here -- they're read live from the <select> element itself
+  // (see getActiveSchemeName() / getActiveCmapSpec()) every time they're
+  // needed. A cached copy here could silently drift out of sync with
+  // what the dropdown actually shows (observed after a backgrounded
+  // tab was resumed and the browser restored the <select>'s displayed
+  // value without firing a "change" event), leaving the visible
+  // selection correct while the wrong scheme kept playing.
   schemeOrders: {},              // cache: scheme name -> playback order (built lazily)
 
   ionArrays: null,               // 8 x rows x cols, or null if loading failed
@@ -292,6 +307,18 @@ function sampleColormap(cmapSpec, t) {
   return sampleStops(INFERNO_STOPS, t); // default: inferno
 }
 
+/* --- Single source of truth for "which scheme is active": always read
+   the <select> element's live value rather than a cached copy, so the
+   sound/color actually played can never silently drift out of sync
+   with what the dropdown visibly shows (see the note on the App object
+   above for why that matters). --- */
+function getActiveSchemeName() {
+  return soundSelect.value;
+}
+function getActiveCmapSpec() {
+  return SOUND_SCHEME_CMAP_OVERRIDES[soundSelect.value] || DEFAULT_CMAP;
+}
+
 /* =======================================================================
    Drawing
    ======================================================================= */
@@ -333,7 +360,7 @@ function drawIonGrid(frame) {
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const t = vmax > 0 ? frame[r][c] / vmax : 0;
-      const [rr, gg, bb] = sampleColormap(App.cmapSpec, t);
+      const [rr, gg, bb] = sampleColormap(getActiveCmapSpec(), t);
       const idx = (r * cols + c) * 4;
       imgData.data[idx] = rr;
       imgData.data[idx + 1] = gg;
@@ -445,14 +472,15 @@ function getSchemeOrder(schemeName) {
 function playStep(stepIndex, intervalSeconds, char) {
   if (!App.audioEnabled) return;
 
-  const spec = SOUND_SCHEMES[App.activeScheme];
+  const schemeName = getActiveSchemeName();
+  const spec = SOUND_SCHEMES[schemeName];
 
   if (spec.type === "keymap") {
     playKeymap(char, intervalSeconds);
     return;
   }
 
-  const order = getSchemeOrder(App.activeScheme);
+  const order = getSchemeOrder(schemeName);
   const note = spec.notes[order[stepIndex % order.length]];
   if (note === REST) return; // a deliberate pause -- play nothing this step
 
@@ -703,6 +731,7 @@ function buildModeSpecificControls() {
 
 /* --- Mode switching --- */
 function toggleMode() {
+  if (!ENABLE_PHRASE_MODE) return; // Phrase Mode is disabled -- stay in Letter Mode
   App.mode = App.mode === "letter" ? "phrase" : "letter";
   applyModeChange();
 }
@@ -773,7 +802,7 @@ function clearDisplay() {
 
 /* --- Phrase Mode --- */
 function submitText() {
-  if (App.mode !== "phrase") return;
+  if (!ENABLE_PHRASE_MODE || App.mode !== "phrase") return;
   const text = entryInput.value;
   if (!text) {
     setStatus("Please enter some text first.");
@@ -785,6 +814,7 @@ function submitText() {
 }
 
 function repeatText() {
+  if (!ENABLE_PHRASE_MODE) return;
   if (App.mode === "phrase" && App.lastText && !App.animating) startSequence(App.lastText);
 }
 
@@ -843,10 +873,10 @@ function advanceSequence() {
 
 /* --- Shared control events --- */
 soundSelect.addEventListener("change", () => {
-  App.activeScheme = soundSelect.value;
-  App.cmapSpec = SOUND_SCHEME_CMAP_OVERRIDES[App.activeScheme] || DEFAULT_CMAP;
   // Start the new scheme from its first note rather than wherever the
-  // old scheme's walk happened to be.
+  // old scheme's walk happened to be. (The scheme/colormap themselves
+  // need no separate assignment here -- they're always read live from
+  // soundSelect.value; see getActiveSchemeName() / getActiveCmapSpec().)
   App.stepCounter = 0;
   if (!(App.mode === "phrase" && App.animating)) refreshIonDisplay();
 });
@@ -888,6 +918,9 @@ window.addEventListener("keydown", onKeyDown);
    Startup
    ======================================================================= */
 async function init() {
+  if (!ENABLE_PHRASE_MODE) {
+    modeBtn.style.display = "none"; // nothing to toggle to -- Letter Mode only
+  }
   refreshNoiseButton();
   refreshMuteButton();
   refreshModeButton();
