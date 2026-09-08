@@ -236,6 +236,16 @@
   </div>
 </div>
 
+<!--
+  Optional: if ion_data.js exists (generate it once with convert.html),
+  it defines window.ION_PEAK_DATA and script.js will use it directly --
+  no fetch() involved, so this works when the page is opened straight
+  from disk (file://) on Windows or a Raspberry Pi. If the file isn't
+  present, the browser just skips this tag and script.js falls back to
+  fetching the CSVs from the csv/ folder instead (for hosted use, e.g.
+  GitHub Pages). Either way, nothing else about this page changes.
+-->
+<script src="ion_data.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

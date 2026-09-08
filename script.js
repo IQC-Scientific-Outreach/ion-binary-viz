@@ -213,8 +213,37 @@ const App = {
 
 /* =======================================================================
    Ion CSV loading (ported from load_ion_arrays() in the notebook/script)
+
+   Two ways this data can arrive, tried in this order:
+
+   1. LOCAL/OFFLINE MODE -- if ion_data.js has already been loaded (via
+      a plain <script src="ion_data.js"> tag in index.html, placed
+      before script.js) it will have set window.ION_PEAK_DATA. A
+      <script> tag can load a local file over file:// with no special
+      permissions, unlike fetch()/XHR, which is what makes this work
+      when index.html is opened directly from disk on Windows or a
+      Raspberry Pi. Generate ion_data.js from your csv/ folder using
+      convert.html (open it in a browser, no install needed).
+
+   2. HOSTED MODE -- otherwise, fetch the 8 CSVs from the csv/ folder,
+      which works fine once the page is served over http/https (e.g.
+      GitHub Pages) but is blocked by browsers for file:// pages.
+
+   Either way, the raw (untrimmed) rows go through the same TRIM_ROWS
+   logic below, so behavior is identical regardless of source.
    ======================================================================= */
 async function loadIonArrays() {
+  if (typeof window.ION_PEAK_DATA !== "undefined") {
+    const arrays = [];
+    for (let i = 1; i <= 8; i++) {
+      const rows = window.ION_PEAK_DATA[i];
+      if (!rows) throw new Error(`ion_data.js is missing entry ${i} (expected keys 1-8)`);
+      const trimmed = TRIM_ROWS > 0 ? rows.slice(TRIM_ROWS, rows.length - TRIM_ROWS) : rows;
+      arrays.push(trimmed);
+    }
+    return arrays;
+  }
+
   const arrays = [];
   for (let i = 1; i <= 8; i++) {
     const path = `csv/ion_peak_${i}.csv`;
@@ -341,11 +370,13 @@ function drawIonGrid(frame) {
     ionCanvas.style.display = "none";
     placeholderMsg.style.display = "flex";
     placeholderMsg.textContent =
-      "Couldn't load csv/ion_peak_1.csv..csv/ion_peak_8.csv\n" +
+      "Couldn't load the ion data.\n" +
       (App.ionLoadError || "") +
-      "\n\nMake sure the 8 CSV files are in a 'csv' folder next to this\n" +
-      "page and it's served over HTTP (opening the file directly, via\n" +
-      "file://, will not work -- browsers block fetch() for local files).";
+      "\n\nIf this page is hosted on a server (e.g. GitHub Pages), make\n" +
+      "sure the 8 CSV files are in a 'csv' folder next to this page.\n\n" +
+      "If you're opening this file directly from disk (file://), that\n" +
+      "won't work with plain CSVs -- use convert.html once to generate\n" +
+      "ion_data.js from your csv folder, then reload this page.";
     return;
   }
   ionCanvas.style.display = "block";
