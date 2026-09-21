@@ -3,6 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Content-Security-Policy: everything this page needs (script, style,
+  the logo image, and the csv/ fetch fallback for hosted use) is
+  same-origin -- no CDNs, no inline scripts, no third parties -- so
+  script-src can stay locked to 'self' with no exceptions. style-src
+  needs 'unsafe-inline' because the page's CSS lives in the <style>
+  block below and in a couple of inline style="" attributes; that's a
+  much smaller risk than allowing inline *script* (CSS can't run
+  arbitrary JS in modern browsers). GitHub Pages doesn't support
+  setting this as a real HTTP header on a static site, so it's declared
+  here instead -- note that a couple of directives (frame-ancestors in
+  particular, which would block this page from being embedded in an
+  iframe elsewhere) are only honored when sent as a header and are
+  silently ignored in a <meta> tag; there's no way around that on plain
+  GitHub Pages short of fronting it with something like Cloudflare.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>Text &rarr; Ion Detector Visualizer</title>
 <style>
   /* ===================================================================
@@ -30,9 +48,29 @@
     height: 100vh;
   }
 
+  /* --- Top area: the main ion image+bits column, plus the optional
+     Tracking history panel to its right. #visualRow takes the place
+     #detectorArea used to occupy directly under #app; #mainColumn
+     bundles the image and its bit-label row together so they always
+     shrink/stay centered as a unit, exactly as before, regardless of
+     whether the tracking panel is taking up space next to them. --- */
+  #visualRow {
+    flex: 6 1 0;
+    display: flex;
+    flex-direction: row;
+    min-height: 0;
+  }
+  #mainColumn {
+    flex: 1 1 auto;   /* fills all available width when Tracking is off */
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
   /* --- Detector image + placeholder-on-error overlay --- */
   #detectorArea {
-    flex: 6 1 0;
+    flex: 1 1 0;
     position: relative;
     min-height: 0;
     background: #000;
@@ -57,6 +95,33 @@
     white-space: pre-line;
     padding: 24px;
     box-sizing: border-box;
+  }
+
+  /* --- Tracking history panel: hidden (zero width) until turned on.
+     No axis labels/ticks, same blocky pixelated rendering as the main
+     image, just a bare canvas. A thin white line separates it from the
+     main ion image when visible. --- */
+  #trackingArea {
+    flex: 0 0 0;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #000;
+    box-sizing: border-box;
+  }
+  #app.tracking-on #trackingArea {
+    flex: 0 0 24%;
+    margin-left: 16px;
+    padding-left: 12px;
+    border-left: 1px solid #ffffff;
+  }
+  #trackingCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
   }
 
   /* --- Row of 8 evenly-spaced 0/1 bit labels --- */
@@ -191,12 +256,19 @@
 </head>
 <body>
 <div id="app">
-  <div id="detectorArea">
-    <canvas id="ionCanvas"></canvas>
-    <div id="placeholderMsg"></div>
+  <div id="visualRow">
+    <div id="mainColumn">
+      <div id="detectorArea">
+        <canvas id="ionCanvas"></canvas>
+        <div id="placeholderMsg"></div>
+      </div>
+      <div id="bitsRow"></div>
+    </div>
+    <div id="trackingArea">
+      <canvas id="trackingCanvas"></canvas>
+    </div>
   </div>
 
-  <div id="bitsRow"></div>
   <div id="phraseRow"></div>
 
   <div id="controlsArea">
@@ -216,6 +288,7 @@
       </div>
 
       <button id="noiseBtn" class="appBtn"></button>
+      <button id="trackingBtn" class="appBtn"></button>
       <button id="muteBtn" class="appBtn">&#128266; Sound On</button>
       <button id="fullscreenBtn" class="appBtn" style="background:#333;">&#9974; Fullscreen</button>
 

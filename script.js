@@ -1,6 +1,20 @@
 "use strict";
 
 /* =======================================================================
+   Everything below runs inside a single IIFE (immediately-invoked
+   function expression) rather than as plain top-level script code. In a
+   classic (non-module) <script>, top-level `function` declarations
+   become properties of `window` -- e.g. window.startSequence() would be
+   directly callable from a browser console, bypassing whatever the UI
+   normally gates it behind. Wrapping everything in a function scope
+   keeps all of this file's internals private to itself, the same way a
+   module would, without requiring `type="module"` (which would break
+   loading this file over file:// on Windows/a Raspberry Pi -- the exact
+   thing this app is designed to support).
+   ======================================================================= */
+(function () {
+
+/* =======================================================================
    ADMIN CONFIGURATION
    Set to false to disable Phrase Mode entirely -- useful for public/
    kiosk installations where someone typing an arbitrary phrase could
@@ -20,6 +34,8 @@ const TRIM_ROWS = 6;                  // rows dropped from top/bottom of each ra
 const IDLE_REFRESH_MS = 200;          // how often the idle "detector static" regenerates
 const DEFAULT_MULT = 1.0, MIN_MULT = 0.5, MAX_MULT = 5.0;
 const DEFAULT_NOISE_ENABLED = true;
+const DEFAULT_TRACKING_ENABLED = false;
+const TRACKING_HISTORY_SIZE = 30; // how many recent entries the Tracking panel keeps
 
 const DEFAULT_CMAP = "inferno";
 const PHRASE_CURRENT_COLOR = "#ffffff";
@@ -117,7 +133,14 @@ const SOUND_SCHEMES = {
     type: "keymap",
   },
 };
-const DEFAULT_SOUND_SCHEME = "C Major Scale";
+// Each mode has its own sensible starting scheme: Keyboard Mode makes
+// Letter Mode's per-key sounds obvious right away, while C Major Scale
+// is the gentlest introduction to the melodic schemes for Phrase Mode.
+// See applyModeChange() -- switching modes resets the dropdown to
+// whichever of these matches the mode you're switching into.
+const DEFAULT_SOUND_SCHEME_LETTER = "Keyboard Mode";
+const DEFAULT_SOUND_SCHEME_PHRASE = "C Major Scale";
+const DEFAULT_SOUND_SCHEME = DEFAULT_SOUND_SCHEME_LETTER; // Letter Mode is the initial mode
 
 /* =======================================================================
    KEYBOARD MODE -- maps each key to a fixed tone based on its QWERTY
@@ -196,6 +219,10 @@ const App = {
   mult: DEFAULT_MULT,
   noiseEnabled: DEFAULT_NOISE_ENABLED,
   audioEnabled: true,
+  trackingEnabled: DEFAULT_TRACKING_ENABLED,
+  trackingHistory: null,          // filled in init() once the ion arrays' column count is known:
+                                   // TRACKING_HISTORY_SIZE rows, each a 1D array of column sums,
+                                   // oldest at index 0 (top) / most recent at the end (bottom)
   // NOTE: the active sound scheme and its colormap are deliberately NOT
   // cached here -- they're read live from the <select> element itself
   // (see getActiveSchemeName() / getActiveCmapSpec()) every time they're
@@ -357,6 +384,9 @@ const placeholderMsg = document.getElementById("placeholderMsg");
 const bitsRow = document.getElementById("bitsRow");
 const phraseRow = document.getElementById("phraseRow");
 const statusArea = document.getElementById("statusArea");
+const appRoot = document.getElementById("app");
+const trackingCanvas = document.getElementById("trackingCanvas");
+const trackingCtx = trackingCanvas.getContext("2d");
 
 // Pre-build the 8 evenly-spaced bit-label cells once.
 for (let i = 0; i < BITS_PER_CHAR; i++) {
@@ -460,6 +490,9 @@ function refreshIonDisplay() {
   const { bits, labels } = currentIdleSelection();
   const frame = computeIonFrame(bits, App.noiseEnabled, App.mult);
   render(frame, labels);
+  return frame; // returned so callers that display a REAL entered character
+                // (not this function's other callers, like the idle tick)
+                // can feed it to the Tracking panel -- see pushTrackingEntry().
 }
 
 function idleTick() {
@@ -470,6 +503,80 @@ function idleTick() {
 
 function defaultStatusText() {
   return App.mode === "letter" ? "Press any key to begin." : "Type a short string and press Submit.";
+}
+
+/* =======================================================================
+   Tracking panel: a rolling history of the last TRACKING_HISTORY_SIZE
+   entered characters' ion frames, each collapsed to a single row by
+   summing over the vertical (row) axis, stacked into a 2nd 2D image --
+   X = the same ion X position as the main image's columns, Y = one row
+   per tracked entry (oldest at the top, most recent at the bottom).
+   Off by default; only actually built up while the Tracking toggle is
+   on -- entries typed while it's off are never recorded.
+   ======================================================================= */
+function makeEmptyTrackingHistory(cols) {
+  return Array.from({ length: TRACKING_HISTORY_SIZE }, () => new Array(cols).fill(0));
+}
+
+function columnSums(frame) {
+  // Collapse a (rows x cols) frame to a single 1D array of length cols,
+  // summing every row's value at each column -- exactly the "sum over
+  // the vertical axis" the history panel is built from.
+  const rows = frame.length, cols = frame[0].length;
+  const sums = new Array(cols).fill(0);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      sums[c] += frame[r][c];
+    }
+  }
+  return sums;
+}
+
+function pushTrackingEntry(frame) {
+  // Called only from the two places a REAL entered character is
+  // displayed (a Letter Mode keystroke, or a Phrase Mode sequence
+  // step) -- never from the idle tick or a reset, so only characters
+  // actually "entered" while Tracking is on ever show up here.
+  if (!App.trackingEnabled || !frame || !App.trackingHistory) return;
+  App.trackingHistory.shift();               // drop the oldest (top) row
+  App.trackingHistory.push(columnSums(frame)); // newest entry goes at the bottom
+  drawTrackingGrid();
+}
+
+function drawTrackingGrid() {
+  if (!App.trackingHistory) return;
+  const rows = App.trackingHistory.length;
+  const cols = App.trackingHistory[0].length;
+  trackingCanvas.width = cols;
+  trackingCanvas.height = rows;
+
+  // Auto-scale to whatever the current maximum value in the buffer is,
+  // rather than a fixed guess -- summed values can range quite a bit
+  // depending on how many rows contributed to a given column, and this
+  // keeps the panel legible regardless. An all-zero buffer (nothing
+  // tracked yet) simply renders as flat black.
+  let maxVal = 0;
+  for (const row of App.trackingHistory) {
+    for (const v of row) {
+      if (v > maxVal) maxVal = v;
+    }
+  }
+  const vmax = maxVal > 0 ? maxVal : 1;
+
+  const cmapSpec = getActiveCmapSpec(); // match the main image's colormap
+  const imgData = trackingCtx.createImageData(cols, rows);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const t = App.trackingHistory[r][c] / vmax;
+      const [rr, gg, bb] = sampleColormap(cmapSpec, t);
+      const idx = (r * cols + c) * 4;
+      imgData.data[idx] = rr;
+      imgData.data[idx + 1] = gg;
+      imgData.data[idx + 2] = bb;
+      imgData.data[idx + 3] = 255;
+    }
+  }
+  trackingCtx.putImageData(imgData, 0, 0);
 }
 
 /* =======================================================================
@@ -671,6 +778,7 @@ const modeBtn = document.getElementById("modeBtn");
 const soundSelect = document.getElementById("soundSelect");
 const claritySlider = document.getElementById("claritySlider");
 const noiseBtn = document.getElementById("noiseBtn");
+const trackingBtn = document.getElementById("trackingBtn");
 const muteBtn = document.getElementById("muteBtn");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const modeSpecificArea = document.getElementById("modeSpecificArea");
@@ -692,6 +800,16 @@ function refreshNoiseButton() {
   } else {
     noiseBtn.textContent = "Fluctuations: Off";
     noiseBtn.style.background = "#7a1f1f";
+  }
+}
+
+function refreshTrackingButton() {
+  if (App.trackingEnabled) {
+    trackingBtn.textContent = "Tracking: On";
+    trackingBtn.style.background = "#555555";
+  } else {
+    trackingBtn.textContent = "Tracking: Off";
+    trackingBtn.style.background = "#7a1f1f";
   }
 }
 
@@ -777,11 +895,17 @@ function applyModeChange() {
   App.seqIndex = 0;
   App.currentChar = null;
   App.currentBits = null;
-  App.stepCounter = 0; // start the sound scheme fresh from its first note
   entryInput.value = "";
 
+  // Each mode has its own default starting scheme (see where these
+  // constants are defined). This also resets the step counter and
+  // redraws the display via onSoundSchemeChanged() -- App.animating is
+  // already false by this point, so no separate refreshIonDisplay()
+  // call is needed here too.
+  soundSelect.value = App.mode === "letter" ? DEFAULT_SOUND_SCHEME_LETTER : DEFAULT_SOUND_SCHEME_PHRASE;
+  onSoundSchemeChanged();
+
   updatePhrase([]);
-  refreshIonDisplay();
   setStatus(defaultStatusText());
 
   buildModeSpecificControls();
@@ -796,6 +920,14 @@ const SPECIAL_KEY_CHARS = { Backspace: "\b", Enter: "\r", Tab: "\t" };
 function onKeyDown(e) {
   if (App.mode !== "letter") return;
   if (EXCLUDED_KEYS.has(e.key)) return;
+  // Ctrl/Cmd/Alt + a key is almost always a shortcut (copy, paste,
+  // select-all, browser/OS shortcuts, ...), not someone entering a
+  // character -- let the browser handle those normally rather than
+  // treating e.g. Ctrl+C as a plain "c" and swallowing the actual
+  // shortcut with the preventDefault() below. Shift is deliberately
+  // NOT included here: Shift+q (etc.) producing "Q" is exactly how
+  // uppercase/octave-drop input is meant to work.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   let ch = null;
   if (e.key.length === 1) {
@@ -813,7 +945,8 @@ function onKeyDown(e) {
   App.currentChar = ch;
   App.currentBits = bits;
 
-  refreshIonDisplay();
+  const frame = refreshIonDisplay();
+  pushTrackingEntry(frame); // a real entered character -- record it if Tracking is on
   updatePhrase([ch]);
   setStatus(`'${displayChar(ch)}'  \u2192  ASCII ${code}  \u2192  ${bits.join("")}`);
 
@@ -829,6 +962,14 @@ function clearDisplay() {
   setStatus(defaultStatusText());
   refreshIonDisplay();
   updatePhrase([]);
+
+  // Also reset the Tracking history back to a blank buffer, regardless
+  // of whether Tracking is currently on or off -- Clear means clear.
+  if (App.trackingHistory) {
+    const cols = App.trackingHistory[0].length;
+    App.trackingHistory = makeEmptyTrackingHistory(cols);
+    if (App.trackingEnabled) drawTrackingGrid();
+  }
 }
 
 /* --- Phrase Mode --- */
@@ -850,6 +991,12 @@ function repeatText() {
 }
 
 function startSequence(text) {
+  // Defense in depth: submitText()/repeatText()/toggleMode() already
+  // check ENABLE_PHRASE_MODE before ever calling this, but this
+  // function is itself reachable directly (e.g. from a browser
+  // console), so it checks too rather than relying solely on its
+  // callers to have gated it.
+  if (!ENABLE_PHRASE_MODE) return;
   if (App.animating) return;
 
   App.animating = true;
@@ -884,6 +1031,7 @@ function advanceSequence() {
 
   const frame = computeIonFrame(bits, App.noiseEnabled, App.mult);
   render(frame, labels);
+  pushTrackingEntry(frame); // a real entered character -- record it if Tracking is on
 
   const charsSoFar = App.sequence.slice(0, App.seqIndex + 1).map(s => s.ch);
   updatePhrase(charsSoFar);
@@ -903,14 +1051,16 @@ function advanceSequence() {
 }
 
 /* --- Shared control events --- */
-soundSelect.addEventListener("change", () => {
+function onSoundSchemeChanged() {
   // Start the new scheme from its first note rather than wherever the
   // old scheme's walk happened to be. (The scheme/colormap themselves
   // need no separate assignment here -- they're always read live from
   // soundSelect.value; see getActiveSchemeName() / getActiveCmapSpec().)
   App.stepCounter = 0;
   if (!(App.mode === "phrase" && App.animating)) refreshIonDisplay();
-});
+  if (App.trackingEnabled) drawTrackingGrid(); // reflect the (possibly new) colormap
+}
+soundSelect.addEventListener("change", onSoundSchemeChanged);
 
 claritySlider.addEventListener("input", () => {
   App.mult = parseFloat(claritySlider.value);
@@ -919,6 +1069,13 @@ claritySlider.addEventListener("input", () => {
 noiseBtn.addEventListener("click", () => {
   App.noiseEnabled = !App.noiseEnabled;
   refreshNoiseButton();
+});
+
+trackingBtn.addEventListener("click", () => {
+  App.trackingEnabled = !App.trackingEnabled;
+  appRoot.classList.toggle("tracking-on", App.trackingEnabled);
+  refreshTrackingButton();
+  if (App.trackingEnabled) drawTrackingGrid(); // show whatever's already in the buffer right away
 });
 
 muteBtn.addEventListener("click", () => {
@@ -953,6 +1110,8 @@ async function init() {
     modeBtn.style.display = "none"; // nothing to toggle to -- Letter Mode only
   }
   refreshNoiseButton();
+  refreshTrackingButton();
+  appRoot.classList.toggle("tracking-on", App.trackingEnabled);
   refreshMuteButton();
   refreshModeButton();
   buildModeSpecificControls();
@@ -966,6 +1125,14 @@ async function init() {
     App.ionLoadError = err.message;
   }
 
+  // The Tracking history's width has to match however many columns the
+  // real ion data has; fall back to 36 (the notebook's own grid width)
+  // if the data never loaded, so the panel still initializes cleanly --
+  // it just never gets anything meaningful pushed into it in that case.
+  const cols = App.ionArrays ? App.ionArrays[0][0].length : 36;
+  App.trackingHistory = makeEmptyTrackingHistory(cols);
+  if (App.trackingEnabled) drawTrackingGrid();
+
   updatePhrase([]);
   refreshIonDisplay();
   setInterval(idleTick, IDLE_REFRESH_MS);
@@ -974,3 +1141,5 @@ async function init() {
 }
 
 init();
+
+})(); // end IIFE
