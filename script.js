@@ -98,12 +98,14 @@ const SOUND_SCHEMES = {
     loop_mode: "forward",
     duration: 0.28,
   },
-  "Smoke on the Water": {
+  "In the Hall of the Mountain King": {
+    // Grieg's opening theme (public domain), in B minor.
     notes: [
-      196.00, 233.08, 261.63, REST,             // dun-dun-dun (pause)
-      196.00, 233.08, 277.18, 261.63, REST,      // dun-dun-dun-dun (pause)
-      196.00, 233.08, 261.63, REST,              // dun-dun-dun (pause)
-      233.08, 196.00, REST,                      // dun-dun (pause)
+      246.94, 277.18, 293.66, 329.63, 369.99, 293.66, 369.99, REST,          // B C# D E F# D F#
+      349.23, 277.18, 349.23, REST,                                          // E# C# E#
+      329.63, 261.63, 329.63, REST,                                          // E C E
+      246.94, 277.18, 293.66, 329.63, 369.99, 293.66, 369.99, 493.88,        // B C# D E F# D F# B
+      440.00, 369.99, 293.66, 369.99, 440.00, REST,                          // A F# D F# A
     ],
     waveform: "square",
     loop_mode: "forward",
