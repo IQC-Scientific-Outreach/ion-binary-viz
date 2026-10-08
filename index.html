@@ -170,7 +170,26 @@
     box-sizing: border-box;
     margin-bottom: 20px;
   }
-  #entryInput:focus { outline: 2px solid #444; }
+  /* Keyboard focus indicator: a bright 3px ring (9.4:1 contrast against
+     the dark background, well above WCAG's 3:1 minimum for non-text UI).
+     :focus-visible means it shows for keyboard navigation but not after
+     every mouse click. */
+  #entryInput:focus { outline: 2px solid #666; }
+  button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+    outline: 3px solid #4fc3f7;
+    outline-offset: 2px;
+  }
+
+  /* Content that's announced to screen readers but not shown visually. */
+  .sr-only {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
 
   .controlsRow {
     display: flex;
@@ -252,59 +271,73 @@
   #creditsText a:hover {
     color: #fff;
   }
+
+  /* At high browser zoom (or on short screens) the fixed full-screen
+     layout can't fit, so let the page scroll instead of clipping the
+     controls off the bottom. The image row gets a definite height so its
+     canvases still size correctly. */
+  @media (max-height: 600px) {
+    /* Let the page itself scroll: body stops being a fixed-height box so
+       there's exactly one scroll container (the browser window). */
+    html { overflow-y: auto; }
+    body { height: auto; overflow: visible; }
+    #app { height: auto; min-height: 100vh; }
+    #visualRow { flex: 0 0 auto; height: 60vh; min-height: 160px; }
+  }
 </style>
 </head>
 <body>
 <div id="app">
+  <h1 class="sr-only">Text to Ion Detector Visualizer</h1>
   <div id="visualRow">
     <div id="mainColumn">
       <div id="detectorArea">
-        <canvas id="ionCanvas"></canvas>
+        <canvas id="ionCanvas" role="img" aria-label="Simulated ion detector image for the current character. The character, its ASCII code, and its binary bits are announced in the status line."></canvas>
         <div id="placeholderMsg"></div>
       </div>
       <div id="bitsRow"></div>
     </div>
     <div id="trackingArea">
-      <canvas id="trackingCanvas"></canvas>
+      <canvas id="trackingCanvas" role="img" aria-label="Tracking history: summed detector intensity for the last 30 characters entered, oldest at the top."></canvas>
     </div>
   </div>
 
   <div id="phraseRow"></div>
 
   <div id="controlsArea">
-    <input id="entryInput" type="text" autocomplete="off" spellcheck="false">
+    <input id="entryInput" type="text" autocomplete="off" spellcheck="false" aria-label="Type characters to encode">
 
     <div class="controlsRow">
       <button id="modeBtn" class="appBtn"></button>
 
       <div class="controlGroup">
-        <label>Sound</label>
+        <label for="soundSelect">Sound</label>
         <select id="soundSelect" class="appSelect"></select>
       </div>
 
       <div class="controlGroup">
-        <label>Clarity</label>
+        <label for="claritySlider">Clarity</label>
         <input id="claritySlider" type="range" min="0.5" max="5" step="0.1" value="1">
       </div>
 
       <button id="noiseBtn" class="appBtn"></button>
       <button id="trackingBtn" class="appBtn"></button>
-      <button id="muteBtn" class="appBtn">&#128266; Sound On</button>
-      <button id="fullscreenBtn" class="appBtn" style="background:#333;">&#9974; Fullscreen</button>
+      <button id="muteBtn" class="appBtn"><span aria-hidden="true">&#128266;</span> Sound On</button>
+      <button id="fullscreenBtn" class="appBtn" style="background:#333;"><span aria-hidden="true">&#9974;</span> Fullscreen</button>
 
       <div id="modeSpecificArea" style="display:flex; gap:12px; flex:2 1 260px; justify-content:center;"></div>
     </div>
   </div>
 
-  <div id="statusArea"></div>
+  <div id="statusArea" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <div id="creditsRow">
     <a href="https://uwaterloo.ca/institute-for-quantum-computing/" target="_blank" rel="noopener noreferrer">
       <img id="creditsLogo" src="logo.png" alt="University of Waterloo Institute for Quantum Computing">
-    </a>
+    <span class="sr-only"> (opens in a new tab)</span></a>
     <div id="creditsText">
-      <div>Developed by the <a href="https://uwaterloo.ca/institute-for-quantum-computing/outreach" target="_blank" rel="noopener noreferrer">IQC Scientific Outreach</a> Team</div>
-      <div>Data from the <a href="https://qiti.iqc.uwaterloo.ca/" target="_blank" rel="noopener noreferrer">Quantum Information with Trapped Ions</a> (QITI) lab</div>
+      <div>Developed by the <a href="https://uwaterloo.ca/institute-for-quantum-computing/outreach" target="_blank" rel="noopener noreferrer">Scientific Outreach Team<span class="sr-only"> (opens in a new tab)</span></a> at the Institute for Quantum Computing, University of Waterloo. Data from the <a href="https://qiti.iqc.uwaterloo.ca/" target="_blank" rel="noopener noreferrer">Quantum Information with Trapped Ions<span class="sr-only"> (opens in a new tab)</span></a> (QITI) lab.</div>
+      <div> The development of the user interface relied on artificial intelligence tools. Please report any issues to iqc-outreach@uwaterloo.ca.</div>
     </div>
   </div>
 </div>
