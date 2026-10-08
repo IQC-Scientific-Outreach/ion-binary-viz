@@ -32,6 +32,7 @@ const DEFAULT_HZ = 3.0, MIN_HZ = 0.2, MAX_HZ = 5.0;
 
 const TRIM_ROWS = 6;                  // rows dropped from top/bottom of each raw ion CSV
 const IDLE_REFRESH_MS = 200;          // how often the idle "detector static" regenerates
+const REDUCED_MOTION_REFRESH_MS = 1000; // slower static for users with "reduce motion" turned on
 const DEFAULT_MULT = 1.0, MIN_MULT = 0.5, MAX_MULT = 5.0;
 const DEFAULT_NOISE_ENABLED = true;
 const DEFAULT_TRACKING_ENABLED = false;
@@ -815,10 +816,10 @@ function refreshTrackingButton() {
 
 function refreshMuteButton() {
   if (App.audioEnabled) {
-    muteBtn.innerHTML = "&#128266; Sound On";
+    muteBtn.innerHTML = '<span aria-hidden="true">&#128266;</span> Sound On';
     muteBtn.style.background = "#555555";
   } else {
-    muteBtn.innerHTML = "&#128263; Muted";
+    muteBtn.innerHTML = '<span aria-hidden="true">&#128263;</span> Muted';
     muteBtn.style.background = "#7a1f1f";
   }
 }
@@ -866,6 +867,8 @@ function buildModeSpecificControls() {
     const label = document.createElement("label");
     label.textContent = "Speed (Hz)";
     speedSlider = document.createElement("input");
+    speedSlider.id = "speedSlider";
+    label.htmlFor = "speedSlider";
     speedSlider.type = "range";
     speedSlider.min = String(MIN_HZ);
     speedSlider.max = String(MAX_HZ);
@@ -915,7 +918,17 @@ function applyModeChange() {
 
 /* --- Letter Mode --- */
 const EXCLUDED_KEYS = new Set(["Escape", "F11"]);
-const SPECIAL_KEY_CHARS = { Backspace: "\b", Enter: "\r", Tab: "\t" };
+// Tab is deliberately NOT captured: intercepting it would trap keyboard
+// users, who rely on Tab/Shift+Tab to move between controls (WCAG 2.1.2).
+const SPECIAL_KEY_CHARS = { Backspace: "\b", Enter: "\r" };
+
+// Controls that need Enter/Space themselves (to press a button, follow a
+// link, open the dropdown...). The text entry box is excluded on purpose:
+// typing there is exactly what Letter Mode visualizes.
+function isOperableControl(el) {
+  if (!el || el === entryInput) return false;
+  return !!el.closest("button, a[href], select, input, textarea");
+}
 
 function onKeyDown(e) {
   if (App.mode !== "letter") return;
@@ -928,6 +941,10 @@ function onKeyDown(e) {
   // NOT included here: Shift+q (etc.) producing "Q" is exactly how
   // uppercase/octave-drop input is meant to work.
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  // Let Enter/Space activate whichever button/link/dropdown has keyboard
+  // focus instead of being encoded as a character. (Other keys are still
+  // visualized normally no matter what has focus.)
+  if ((e.key === "Enter" || e.key === " ") && isOperableControl(e.target)) return;
 
   let ch = null;
   if (e.key.length === 1) {
@@ -1102,6 +1119,13 @@ entryInput.addEventListener("keydown", e => {
 
 window.addEventListener("keydown", onKeyDown);
 
+document.addEventListener("click", e => {
+  // e.detail is 0 for keyboard-triggered clicks, >0 for real pointer clicks.
+  if (e.detail > 0 && e.target.closest && e.target.closest("button")) {
+    entryInput.focus();
+  }
+});
+
 /* =======================================================================
    Startup
    ======================================================================= */
@@ -1135,7 +1159,10 @@ async function init() {
 
   updatePhrase([]);
   refreshIonDisplay();
-  setInterval(idleTick, IDLE_REFRESH_MS);
+  const prefersReducedMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  setInterval(idleTick, prefersReducedMotion ? REDUCED_MOTION_REFRESH_MS : IDLE_REFRESH_MS);
 
   entryInput.focus();
 }

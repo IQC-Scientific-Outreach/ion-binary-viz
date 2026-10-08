@@ -22,10 +22,10 @@ function buildChecklist() {
     li.id = `slot-${i}`;
     if (loaded[i]) {
       li.className = "loaded";
-      li.textContent = `\u2713 ion_peak_${i}.csv (${loaded[i].length} rows)`;
+      li.textContent = `\u2713 ion_peak_${i}.csv \u2014 loaded (${loaded[i].length} rows)`;
     } else {
       li.className = "pending";
-      li.textContent = `\u25cb ion_peak_${i}.csv`;
+      li.textContent = `\u25cb ion_peak_${i}.csv \u2014 not loaded yet`;
     }
     checklist.appendChild(li);
   }

@@ -96,6 +96,10 @@
     color: #fff;
     font-weight: bold;
   }
+  button:focus-visible, input:focus-visible, a:focus-visible {
+    outline: 3px solid #4fc3f7;
+    outline-offset: 2px;
+  }
 </style>
 </head>
 <body>
@@ -120,14 +124,14 @@
   </ol>
 
   <div id="dropZone">
-    <div>Drop your 8 CSV files here, or:</div>
+    <label for="fileInput">Drop your 8 CSV files here, or choose them:</label><br>
     <input type="file" id="fileInput" accept=".csv" multiple>
   </div>
 
   <ul id="checklist"></ul>
 
   <button id="downloadBtn" disabled>Download ion_data.js</button>
-  <div id="statusMsg"></div>
+  <div id="statusMsg" role="status" aria-live="polite"></div>
 </div>
 
 <script src="convert.js"></script>
