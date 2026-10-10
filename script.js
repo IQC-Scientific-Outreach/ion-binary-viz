@@ -23,6 +23,12 @@
    ======================================================================= */
 const ENABLE_PHRASE_MODE = true;
 
+// Set to false to hide the collapsible "Encoding information in atoms"
+// explainer panel at the bottom of the page -- e.g. for a science-fair
+// booth where someone is on hand to explain things in person, versus
+// the public website where visitors are on their own.
+const ENABLE_INFO_PANEL = true;
+
 /* =======================================================================
    GENERAL CONSTANTS  (ported 1:1 from binary_text_visualizer.py)
    ======================================================================= */
@@ -785,6 +791,7 @@ const trackingBtn = document.getElementById("trackingBtn");
 const muteBtn = document.getElementById("muteBtn");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const modeSpecificArea = document.getElementById("modeSpecificArea");
+const infoPanel = document.getElementById("infoPanel");
 
 for (const name of Object.keys(SOUND_SCHEMES)) {
   const opt = document.createElement("option");
@@ -929,7 +936,7 @@ const SPECIAL_KEY_CHARS = { Backspace: "\b", Enter: "\r" };
 // typing there is exactly what Letter Mode visualizes.
 function isOperableControl(el) {
   if (!el || el === entryInput) return false;
-  return !!el.closest("button, a[href], select, input, textarea");
+  return !!el.closest("button, a[href], select, input, textarea, summary");
 }
 
 function onKeyDown(e) {
@@ -1135,6 +1142,9 @@ async function init() {
   if (!ENABLE_PHRASE_MODE) {
     modeBtn.style.display = "none"; // nothing to toggle to -- Letter Mode only
   }
+  // The panel starts out `hidden` in index.html so it never flashes on
+  // screen before this runs when it's meant to stay off.
+  infoPanel.hidden = !ENABLE_INFO_PANEL;
   refreshNoiseButton();
   refreshTrackingButton();
   appRoot.classList.toggle("tracking-on", App.trackingEnabled);
