@@ -244,6 +244,34 @@
     background: #111;
   }
 
+  /* --- Collapsible "Encoding information in atoms" explainer, full
+     width at the bottom of the page. Uses a native <details>/<summary>
+     so it's collapsible and keyboard-accessible with no extra JS.
+     Toggled on/off entirely by ENABLE_INFO_PANEL in script.js. --- */
+  #infoPanel {
+    flex: 0 0 auto;
+    background: #111;
+    border-top: 1px solid #333;
+    padding: 0 24px;
+  }
+  #infoPanel summary {
+    cursor: pointer;
+    padding: 10px 0;
+    font-weight: bold;
+    font-size: 15px;
+    color: #fff;
+  }
+  #infoPanel summary:hover { color: #4fc3f7; }
+  #infoText {
+    max-height: 30vh;   /* scrolls instead of squeezing the detector image away */
+    overflow-y: auto;
+    padding-bottom: 14px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #ccc;
+  }
+  #infoText p { margin: 0 0 10px 0; }
+
   /* --- Credits footer: logo lower-left, attribution text lower-right --- */
   #creditsRow {
     flex: 0 0 auto;
@@ -330,6 +358,15 @@
   </div>
 
   <div id="statusArea" role="status" aria-live="polite" aria-atomic="true"></div>
+
+  <details id="infoPanel" hidden>
+    <summary>Binary information and atomic quantum computing</summary>
+    <div id="infoText">
+      <p>Enter a letter and you'll see a series of lights pop onto the screen. Different letters will turn on different lights depending on how that letter is represented in binary with the ASCII code, with dark spots corresponding to 0s and bright spots corresponding to 1s.</p>
+      <p>These aren't any ordinary lights though; each light comes from a single trapped atom. In this experiment, we isolate charged Ytterbium ions in an electromagnetic trap. Since they are charged, they repel each other, forming a clean row of 8 atoms.</p>
+      <p>Atoms have energy levels that are quantized, meaning they can be low-energy or high-energy but nothing in between. We can use lasers to switch the atoms from low to high energy, which we use to encode 0s and 1s in our atomic system. Only atoms in the state "1" emit light, which we measure as a bright spot on a photon-sensitive camera. This scheme can be used to build an 8-bit quantum computer one atom at a time!</p>
+    </div>
+  </details>
 
   <div id="creditsRow">
     <a href="https://uwaterloo.ca/institute-for-quantum-computing/" target="_blank" rel="noopener noreferrer">
