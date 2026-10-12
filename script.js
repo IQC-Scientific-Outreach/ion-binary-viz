@@ -29,6 +29,28 @@ const ENABLE_PHRASE_MODE = true;
 // the public website where visitors are on their own.
 const ENABLE_INFO_PANEL = true;
 
+// Set to false to never use the phone layout -- e.g. at a fair, where
+// the app only ever runs on the booth's own computer. When true, phones
+// (touch screen, small display) automatically get a compact layout that
+// fits above the on-screen keyboard and drops the extra controls
+// (Tracking, Clarity, Fluctuations, Fullscreen, Phrase Mode speed).
+// To preview it on a computer, add ?mobile=1 to the page's address
+// (?mobile=0 forces the full layout on a phone instead).
+const ENABLE_MOBILE_MODE = true;
+
+function detectMobileMode() {
+  if (!ENABLE_MOBILE_MODE) return false;
+  const override = new URLSearchParams(window.location.search).get("mobile");
+  if (override === "1") return true;
+  if (override === "0") return false;
+  const coarsePointer =
+    typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+  // Phones only: tablets have room for the full layout. screen.width/
+  // height don't change with rotation, so this stays put either way.
+  return coarsePointer && Math.min(window.screen.width, window.screen.height) <= 600;
+}
+const IS_MOBILE = detectMobileMode();
+
 /* =======================================================================
    GENERAL CONSTANTS  (ported 1:1 from binary_text_visualizer.py)
    ======================================================================= */
@@ -511,6 +533,9 @@ function idleTick() {
 }
 
 function defaultStatusText() {
+  if (IS_MOBILE) {
+    return App.mode === "letter" ? "Tap the box above and type to begin." : "Type a short string and tap Submit.";
+  }
   return App.mode === "letter" ? "Press any key to begin." : "Type a short string and press Submit.";
 }
 
@@ -834,11 +859,12 @@ function refreshMuteButton() {
 }
 
 function refreshModeButton() {
+  const prefix = IS_MOBILE ? "" : "Mode: "; // short enough to fit a phone's button row
   if (App.mode === "letter") {
-    modeBtn.textContent = "Mode: Letter";
+    modeBtn.textContent = prefix + "Letter";
     modeBtn.style.background = "#00695c";
   } else {
-    modeBtn.textContent = "Mode: Phrase";
+    modeBtn.textContent = prefix + "Phrase";
     modeBtn.style.background = "#4527a0";
   }
 }
@@ -872,7 +898,7 @@ function buildModeSpecificControls() {
     modeSpecificArea.appendChild(repeatBtn);
 
     const speedGroup = document.createElement("div");
-    speedGroup.className = "controlGroup";
+    speedGroup.className = "controlGroup speedGroup"; // speedGroup: hidden in mobile mode
     const label = document.createElement("label");
     label.textContent = "Speed (Hz)";
     speedSlider = document.createElement("input");
@@ -908,6 +934,8 @@ function applyModeChange() {
   App.currentChar = null;
   App.currentBits = null;
   entryInput.value = "";
+  letterInputPrev = "";
+  refreshEntryPlaceholder();
 
   // Each mode has its own default starting scheme (see where these
   // constants are defined). This also resets the step counter and
@@ -954,6 +982,11 @@ function onKeyDown(e) {
   // focus instead of being encoded as a character. (Other keys are still
   // visualized normally no matter what has focus.)
   if ((e.key === "Enter" || e.key === " ") && isOperableControl(e.target)) return;
+  // Phone on-screen keyboards usually don't say which key was pressed
+  // (key "Unidentified", keyCode 229, or mid-"composition") -- leave
+  // those alone so the character reaches the text box, where
+  // onLetterInput() below picks it up instead.
+  if (e.isComposing || e.keyCode === 229) return;
 
   let ch = null;
   if (e.key.length === 1) {
@@ -966,6 +999,14 @@ function onKeyDown(e) {
   // Prevent Tab from shifting focus, Backspace from navigating back, etc.
   e.preventDefault();
 
+  lastKeydownChar = ch;
+  lastKeydownTime = performance.now();
+  encodeLetter(ch);
+  entryInput.value = ""; // clear right back out, so it never builds up text
+  letterInputPrev = "";
+}
+
+function encodeLetter(ch) {
   const code = ch.charCodeAt(0) & 0xff;
   const bits = toBits(code);
   App.currentChar = ch;
@@ -978,8 +1019,37 @@ function onKeyDown(e) {
 
   playStep(App.stepCounter, null, ch); // no interval cap -- typing speed varies
   App.stepCounter++;
+}
 
-  entryInput.value = ""; // clear right back out, so it never builds up text
+/* --- Letter Mode on phones/tablets ---
+   On-screen keyboards mostly skip proper keydown events, so instead
+   watch what actually lands in the text box: whenever its text grows,
+   visualize the newest character, then empty the box again. While the
+   keyboard is "composing" a word (Android does this even with
+   autocorrect off), the box can't be emptied without confusing the
+   keyboard, so it's left to grow until the word ends and only the
+   newly-added character is used each time. Desktop keystrokes never get
+   here -- onKeyDown() handles them and stops them reaching the box. */
+let letterInputPrev = "";
+let lastKeydownChar = null, lastKeydownTime = 0;
+
+function onLetterInput(e) {
+  if (App.mode !== "letter") return;
+  const value = entryInput.value;
+  if (value.length > letterInputPrev.length && value.startsWith(letterInputPrev)) {
+    const added = Array.from(value.slice(letterInputPrev.length));
+    const ch = added[added.length - 1];
+    // Safety net for a browser that delivers BOTH a usable keydown and
+    // the inserted text -- don't play the same keystroke twice.
+    const justHandled = ch === lastKeydownChar && performance.now() - lastKeydownTime < 100;
+    if (!justHandled) encodeLetter(ch);
+  }
+  if (e.isComposing) {
+    letterInputPrev = value;
+  } else {
+    entryInput.value = "";
+    letterInputPrev = "";
+  }
 }
 
 function clearDisplay() {
@@ -1127,6 +1197,12 @@ entryInput.addEventListener("keydown", e => {
 });
 
 window.addEventListener("keydown", onKeyDown);
+entryInput.addEventListener("input", onLetterInput);
+entryInput.addEventListener("compositionend", () => {
+  if (App.mode !== "letter") return;
+  entryInput.value = "";
+  letterInputPrev = "";
+});
 
 document.addEventListener("click", e => {
   // e.detail is 0 for keyboard-triggered clicks, >0 for real pointer clicks.
@@ -1134,6 +1210,54 @@ document.addEventListener("click", e => {
     entryInput.focus();
   }
 });
+
+/* --- Mobile layout --- */
+function refreshEntryPlaceholder() {
+  if (!IS_MOBILE) return;
+  entryInput.placeholder = App.mode === "letter" ? "Tap here to type" : "Type a phrase";
+  entryInput.enterKeyHint = App.mode === "letter" ? "enter" : "go";
+}
+
+function updateMobileViewport() {
+  // Size the app to the part of the screen NOT covered by the on-screen
+  // keyboard. iOS doesn't shrink the page for the keyboard (it just
+  // overlays it and scrolls), so this reads the visual viewport instead,
+  // and pins the page back to the top in case the browser scrolled it.
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", `${Math.round(h)}px`);
+  window.scrollTo(0, 0);
+}
+
+function setUpMobileMode() {
+  document.documentElement.classList.add("mobile-ui");
+  // None of the hidden extras should keep doing anything in the background.
+  App.trackingEnabled = false;
+  App.mult = DEFAULT_MULT;
+  App.freqHz = DEFAULT_HZ;
+
+  updateMobileViewport();
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", updateMobileViewport);
+    window.visualViewport.addEventListener("scroll", updateMobileViewport);
+  }
+  window.addEventListener("resize", updateMobileViewport);
+
+  // Text box focused == on-screen keyboard up: hide the info panel and
+  // credits while typing so everything else fits.
+  entryInput.addEventListener("focus", () => document.documentElement.classList.add("keyboard-open"));
+  entryInput.addEventListener("blur", () => document.documentElement.classList.remove("keyboard-open"));
+
+  // Tapping a button would normally steal focus from the text box and
+  // drop the keyboard; keep the focus where it is instead.
+  document.getElementById("controlsArea").addEventListener("mousedown", e => {
+    if (e.target.closest("button")) e.preventDefault();
+  });
+  // Tapping the detector image brings the keyboard (back) up.
+  document.getElementById("visualRow").addEventListener("click", () => entryInput.focus());
+
+  refreshEntryPlaceholder();
+}
 
 /* =======================================================================
    Startup
@@ -1145,6 +1269,7 @@ async function init() {
   // The panel starts out `hidden` in index.html so it never flashes on
   // screen before this runs when it's meant to stay off.
   infoPanel.hidden = !ENABLE_INFO_PANEL;
+  if (IS_MOBILE) setUpMobileMode();
   refreshNoiseButton();
   refreshTrackingButton();
   appRoot.classList.toggle("tracking-on", App.trackingEnabled);
@@ -1176,7 +1301,10 @@ async function init() {
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   setInterval(idleTick, prefersReducedMotion ? REDUCED_MOTION_REFRESH_MS : IDLE_REFRESH_MS);
 
-  entryInput.focus();
+  // Phones won't raise the keyboard without a real tap anyway, so leave
+  // the box unfocused there (focusing it would hide the credits/info
+  // panel as if the keyboard were up).
+  if (!IS_MOBILE) entryInput.focus();
 }
 
 init();
