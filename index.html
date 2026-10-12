@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content">
 <!--
   Content-Security-Policy: everything this page needs (script, style,
   the logo image, and the csv/ fetch fallback for hosted use) is
@@ -312,6 +312,77 @@
     #app { height: auto; min-height: 100vh; }
     #visualRow { flex: 0 0 auto; height: 60vh; min-height: 160px; }
   }
+  /* ===================================================================
+     MOBILE MODE -- applied when script.js adds .mobile-ui to <html>
+     (phones only; see ENABLE_MOBILE_MODE in script.js). Squeezes the
+     whole app into whatever's left of the screen above the on-screen
+     keyboard (--app-height, kept in sync with the visual viewport by
+     script.js) and drops the extra controls: Tracking, Clarity,
+     Fluctuations, Fullscreen and the Phrase Mode speed slider.
+     .keyboard-open (text box focused) also tucks away the info panel
+     and credits to free up room while typing.
+     Comes after the max-height rule above and is more specific, so it
+     wins over it on short (landscape) phone screens too.
+     =================================================================== */
+  html.mobile-ui, html.mobile-ui body {
+    height: 100%;
+    overflow: hidden;
+  }
+  html.mobile-ui #app {
+    height: var(--app-height, 100dvh);
+    min-height: 0;
+  }
+  html.mobile-ui #visualRow {
+    flex: 1 1 0;
+    height: auto;
+    min-height: 60px;
+  }
+  html.mobile-ui #trackingArea,
+  html.mobile-ui #trackingBtn,
+  html.mobile-ui #noiseBtn,
+  html.mobile-ui #fullscreenBtn,
+  html.mobile-ui #clarityGroup,
+  html.mobile-ui .speedGroup,
+  html.mobile-ui.keyboard-open #infoPanel,
+  html.mobile-ui.keyboard-open #creditsRow {
+    display: none !important;
+  }
+  html.mobile-ui #bitsRow { padding: 2px 8px 0 8px; }
+  html.mobile-ui .bitCell { font-size: 16px; }
+  html.mobile-ui #phraseRow { padding: 2px 8px; font-size: 24px; }
+  html.mobile-ui #controlsArea { padding: 8px 10px 0 10px; }
+  html.mobile-ui #entryInput {
+    font-size: 18px;   /* 16px+ stops iOS from zooming in on focus */
+    padding: 8px;
+    margin-bottom: 8px;
+  }
+  html.mobile-ui .controlsRow {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding-bottom: 6px;
+  }
+  html.mobile-ui .controlGroup {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  html.mobile-ui .controlGroup label { display: none; } /* the <select> keeps its accessible name via for= */
+  html.mobile-ui button.appBtn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 4px;
+    font-size: 13px;
+  }
+  html.mobile-ui #modeSpecificArea {
+    flex: 1 1 0 !important;   /* overrides the inline flex in the HTML */
+    gap: 6px !important;
+  }
+  html.mobile-ui #statusArea {
+    padding: 0 6px 6px 6px;
+    font-size: 13px;
+  }
+  html.mobile-ui #infoPanel { padding: 0 10px; }
+  html.mobile-ui #creditsRow { padding: 0 10px 6px 10px; }
+  html.mobile-ui #creditsText { font-size: 9px; }
 </style>
 </head>
 <body>
@@ -333,7 +404,7 @@
   <div id="phraseRow"></div>
 
   <div id="controlsArea">
-    <input id="entryInput" type="text" autocomplete="off" spellcheck="false" aria-label="Type characters to encode">
+    <input id="entryInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Type characters to encode">
 
     <div class="controlsRow">
       <button id="modeBtn" class="appBtn"></button>
@@ -343,7 +414,7 @@
         <select id="soundSelect" class="appSelect"></select>
       </div>
 
-      <div class="controlGroup">
+      <div id="clarityGroup" class="controlGroup">
         <label for="claritySlider">Clarity</label>
         <input id="claritySlider" type="range" min="0.5" max="5" step="0.1" value="1">
       </div>
